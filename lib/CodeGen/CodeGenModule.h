@@ -1227,6 +1227,7 @@ public:
 
   StringRef getMangledName(GlobalDecl GD);
   StringRef getBlockMangledName(GlobalDecl GD, const BlockDecl *BD);
+  StringRef getMangledDynamicRecord(GlobalDecl GD);
 
   void EmitTentativeDefinition(const VarDecl *D);
 

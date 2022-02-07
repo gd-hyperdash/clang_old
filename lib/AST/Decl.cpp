@@ -2665,6 +2665,15 @@ bool VarDecl::isKnownToBeDefined() const {
 }
 
 bool VarDecl::isNoDestroy(const ASTContext &Ctx) const {
+  // Decorator parameters must not be destroyed, unless it's locking.
+  if (auto PVD = dyn_cast<ParmVarDecl>(this)) {
+    if (auto FD = dyn_cast<FunctionDecl>(PVD->getDeclContext())) {
+      if (FD->isDecorator() && !FD->isLockingDecorator()) {
+        return true;
+      }
+    }
+  }
+
   return hasGlobalStorage() && (hasAttr<NoDestroyAttr>() ||
                                 (!Ctx.getLangOpts().RegisterStaticDestructors &&
                                  !hasAttr<AlwaysDestroyAttr>()));
@@ -3238,6 +3247,64 @@ bool FunctionDecl::isNoReturn() const {
   return false;
 }
 
+bool FunctionDecl::hasCustomLinkName() const { return hasAttr<LinkNameAttr>(); }
+
+StringRef FunctionDecl::getCustomLinkName() const {
+  if (auto A = getAttr<LinkNameAttr>()) {
+    return A->getSymbol();
+  }
+
+  return StringRef();
+}
+
+bool FunctionDecl::hasDynamicLinkage() const {
+  return hasAttr<DynamicLinkageAttr>();
+}
+
+StringRef FunctionDecl::getDynamicMID() const {
+  if (auto A = getAttr<DynamicLinkageAttr>()) {
+    return A->getMID();
+  }
+
+  return StringRef();
+}
+
+bool FunctionDecl::isDecorator() const { return hasAttr<DecoratorAttr>(); }
+
+bool FunctionDecl::isTailDecorator() const {
+  return hasAttr<TailDecoratorAttr>();
+}
+
+bool FunctionDecl::isOptionalDecorator() const {
+  return hasAttr<OptionalDecoratorAttr>();
+}
+
+bool FunctionDecl::isLockingDecorator() const {
+  return hasAttr<LockingDecoratorAttr>();
+}
+
+FunctionDecl *FunctionDecl::getDecoratorBase() const {
+  if (auto A = getAttr<DecoratorAttr>()) {
+    return A->getBase();
+  }
+
+  return nullptr;
+}
+
+void FunctionDecl::setDecoratorBase(FunctionDecl *FD) {
+  if (auto A = getAttr<DecoratorAttr>()) {
+    *reinterpret_cast<FunctionDecl **>(reinterpret_cast<std::uintptr_t>(A) +
+                                       sizeof(InheritableAttr)) = FD;
+  }
+}
+
+TypeSourceInfo *FunctionDecl::getTailTypeLoc() const {
+  if (auto A = getAttr<TailDecoratorAttr>()) {
+    return A->getTypeLoc();
+  }
+
+  return nullptr;
+}
 
 MultiVersionKind FunctionDecl::getMultiVersionKind() const {
   if (hasAttr<TargetAttr>())

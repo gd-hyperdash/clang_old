@@ -5069,6 +5069,13 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     savedContext.pop();
   }
 
+  // If this is an instantiation of a decorator, find its base.
+  if (Function->isDecorator()) {
+    if (!MLExt.HandleDecoratorInstantiation(Function)) {
+      return;
+    }
+  }
+
   DeclGroupRef DG(Function);
   Consumer.HandleTopLevelDecl(DG);
 

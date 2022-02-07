@@ -352,6 +352,10 @@ void Parser::ParseAttributeWithTypeArg(IdentifierInfo &AttrName,
                  ScopeName, ScopeLoc, nullptr, 0, Syntax);
 }
 
+static bool attributeIsDecoratorAttr(const IdentifierInfo &II) {
+  return II.getName() == "decorator";
+}
+
 unsigned Parser::ParseAttributeArgsCommon(
     IdentifierInfo *AttrName, SourceLocation AttrNameLoc,
     ParsedAttributes &Attrs, SourceLocation *EndLoc, IdentifierInfo *ScopeName,
@@ -418,8 +422,11 @@ unsigned Parser::ParseAttributeArgsCommon(
             Uneval ? Sema::ExpressionEvaluationContext::Unevaluated
                    : Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
+        Actions.MLExt.setDecoratorContext(attributeIsDecoratorAttr(*AttrName));
         ExprResult ArgExpr(
             Actions.CorrectDelayedTyposInExpr(ParseAssignmentExpression()));
+        Actions.MLExt.setDecoratorContext(false);
+
         if (ArgExpr.isInvalid()) {
           SkipUntil(tok::r_paren, StopAtSemi);
           return 0;

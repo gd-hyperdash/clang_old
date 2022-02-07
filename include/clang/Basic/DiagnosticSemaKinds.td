@@ -11350,4 +11350,58 @@ def err_riscv_builtin_requires_extension : Error<
   "builtin requires '%0' extension support to be enabled">;
 def err_riscv_builtin_invalid_lmul : Error<
   "LMUL argument must be in the range [0,3] or [5,7]">;
+
+// link name
+def err_invalid_link_name : Error<
+  "invalid link name">;
+
+// dynamic linkage
+def err_dynamic_method : Error<
+  "methods cannot be marked as dynamic">;
+def note_dynamic_mark_record : Note<
+  "mark the whole %0 as dynamic">;
+def err_dynamic_main : Error<
+  "program entrypoint cannot be marked as dynamic">;
+def err_dynamic_decorator : Error<
+  "dynamic cannot be marked as decorator">;
+
+// decorator
+def err_decorator_one_target : Error<
+  "decorator can only target 1 function">;
+def err_decorator_main : Error<
+  "program entrypoint cannot be marked as decorator">;
+def err_decorator_dynamic : Error<
+  "decorator cannot be marked as dynamic">;
+def err_decorator_argument_not_valid : Error<
+  "could not find a valid base">;
+def err_decorator_argument_type_mismatch : Error<
+  "the type of '%0' is not compatible with the decorator">;
+def err_decorator_argument_is_decorator : Error<
+  "base function cannot be a decorator">;
+def err_decorator_call : Error<
+  "decorators cannot be called directly">;
+def err_decorator_maybe_falloff_nonvoid : Error<
+  "locking decorator does not return a value in all control paths">;
+def err_decorator_falloff_nonvoid : Error<
+  "locking decorator does not return a value">;
+def err_decorator_return_missing_expr : Error<
+  "locking decorator '%0' must return a value">;
+def err_decorator_return_has_expr : Error<
+  "non-locking decorator must not return a value">;
+def err_decorator_attr_only : Error<
+  "'%0' is not a decorator and cannot be declared as %select{tail|optional|locking}1">;
+def err_tail_already_marked : Error<
+  "%select{functions|methods}0 cannot be marked as tails more than once">;
+def err_tail_is_decorator : Error<
+  "tail attribute must be specified before any decorator attribute">;
+def err_tail_wrong_ret_type : Error<
+  "the return type of '%0' must be 'void'">;
+def err_tail_wrong_param_size : Error<
+  "tails must have only 1 argument">;
+def err_tail_wrong_param_type : Error<
+  "the argument type of '%0' must be '%1'">;
+def err_extension_initialization : Error<
+  "extensions cannot be constructed directly">;
+def err_extension_failed : Error<
+  "could not instantiate extension">;
 } // end of sema component.

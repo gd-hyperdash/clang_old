@@ -1674,11 +1674,20 @@ Sema::AccessResult Sema::CheckConstructorAccess(SourceLocation UseLoc,
                                                 DeclAccessPair Found,
                                                 const InitializedEntity &Entity,
                                                 const PartialDiagnostic &PD) {
+  CXXRecordDecl *NamingClass = Constructor->getParent();
+
+  // Prevent calls to extension ctors.
+  if (NamingClass->isRecordExtension()) {
+    auto FD = dyn_cast<FunctionDecl>(CurContext);
+    if (!FD || !MLExt.isInMLNamespace(FD)) {
+      Diag(UseLoc, diag::err_extension_initialization);
+      return AR_inaccessible;
+    }
+  }
+
   if (!getLangOpts().AccessControl ||
       Found.getAccess() == AS_public)
     return AR_accessible;
-
-  CXXRecordDecl *NamingClass = Constructor->getParent();
 
   // Initializing a base sub-object is an instance method call on an
   // object of the derived class.  Otherwise, we have an instance method

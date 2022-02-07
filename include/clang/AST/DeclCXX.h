@@ -574,6 +574,22 @@ public:
     return data().IsParsingBaseSpecifiers;
   }
 
+  /// Determines whether this record has dynamic linkage.
+  bool hasDynamicLinkage() const;
+
+  /// Get this dynamic module ID.
+  StringRef getDynamicMID() const;
+
+  /// Determines whether this record is an extension for another record.
+  bool isRecordExtension() const;
+
+  // If this record is an extension, get the base.
+  TypeSourceInfo *getExtensionBaseLoc() const;
+  CXXRecordDecl *getExtensionBase() const;
+
+  // Sets the base for an extension.
+  void setExtensionBaseLoc(TypeSourceInfo *TSI);
+
   unsigned getODRHash() const;
 
   /// Sets the base classes of this struct or class.
@@ -2120,6 +2136,9 @@ public:
   /// supplied by IR generation to either forward to the function call operator
   /// or clone the function call operator.
   bool isLambdaStaticInvoker() const;
+
+  /// Determines whether this method has dynamic linkage.
+  bool hasDynamicLinkage() const override;
 
   /// Find the method in \p RD that corresponds to this one.
   ///

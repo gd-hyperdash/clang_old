@@ -541,6 +541,10 @@ struct CheckFallThroughDiagnostics {
     D.diag_AlwaysFallThrough_ReturnsNonVoid =
       diag::warn_falloff_nonvoid_function;
 
+     // Different constraits for decorators.
+    bool isDecorator = false;
+    bool isLockingDecorator = false;
+
     // Don't suggest that virtual functions be marked "noreturn", since they
     // might be overridden by non-noreturn functions.
     bool isVirtualMethod = false;
@@ -549,14 +553,29 @@ struct CheckFallThroughDiagnostics {
 
     // Don't suggest that template instantiations be marked "noreturn"
     bool isTemplateInstantiation = false;
-    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Func))
+    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Func)) {
       isTemplateInstantiation = Function->isTemplateInstantiation();
+      isDecorator = Function->isDecorator();
+      isLockingDecorator = Function->isLockingDecorator();
+    }
 
     if (!isVirtualMethod && !isTemplateInstantiation)
       D.diag_NeverFallThroughOrReturn =
         diag::warn_suggest_noreturn_function;
     else
       D.diag_NeverFallThroughOrReturn = 0;
+
+    if (isDecorator) {
+      if (isLockingDecorator) {
+        D.diag_MaybeFallThrough_ReturnsNonVoid =
+            diag::err_decorator_maybe_falloff_nonvoid;
+        D.diag_AlwaysFallThrough_ReturnsNonVoid =
+            diag::err_decorator_falloff_nonvoid;
+      } else {
+        D.diag_MaybeFallThrough_ReturnsNonVoid = 0;
+        D.diag_AlwaysFallThrough_ReturnsNonVoid = 0;
+      }
+    }
 
     D.funMode = Function;
     return D;
@@ -691,13 +710,13 @@ static void CheckFallThroughForBody(Sema &S, const Decl *D, const Stmt *Body,
     case MaybeFallThrough:
       if (HasNoReturn)
         EmitDiag(RBrace, CD.diag_MaybeFallThrough_HasNoReturn);
-      else if (!ReturnsVoid)
+      else if (!ReturnsVoid && CD.diag_MaybeFallThrough_ReturnsNonVoid)
         EmitDiag(RBrace, CD.diag_MaybeFallThrough_ReturnsNonVoid);
       break;
     case AlwaysFallThrough:
       if (HasNoReturn)
         EmitDiag(RBrace, CD.diag_AlwaysFallThrough_HasNoReturn);
-      else if (!ReturnsVoid)
+      else if (!ReturnsVoid && CD.diag_AlwaysFallThrough_ReturnsNonVoid)
         EmitDiag(RBrace, CD.diag_AlwaysFallThrough_ReturnsNonVoid);
       break;
     case NeverFallThroughOrReturn:
@@ -2146,6 +2165,131 @@ public:
 };
 } // anonymous namespace
 } // namespace consumed
+
+//===----------------------------------------------------------------------===//
+// ML extensions
+//===----------------------------------------------------------------------===//
+
+enum DecoratorKind {
+  TailDecorator,
+  OptionalDecorator,
+  LockingDecorator,
+};
+
+static QualType StripQualifiers(ASTContext &Context, const QualType T) {
+  QualType Ty = T.getCanonicalType().getUnqualifiedType();
+
+  if (auto RV = dyn_cast<RValueReferenceType>(Ty)) {
+    Ty = Context.getRValueReferenceType(
+        StripQualifiers(Context, RV->getPointeeType()));
+  }
+
+  if (auto LV = dyn_cast<LValueReferenceType>(Ty)) {
+    Ty = Context.getLValueReferenceType(
+        StripQualifiers(Context, LV->getPointeeType()));
+  }
+
+  if (auto P = dyn_cast<PointerType>(Ty)) {
+    Ty = Context.getPointerType(StripQualifiers(Context, P->getPointeeType()));
+  }
+
+  return Ty;
+}
+
+static QualType GetTailParamType(ASTContext &Context, ParmVarDecl *P) {
+  auto T = StripQualifiers(Context, P->getType());
+
+  if (auto LV = dyn_cast<LValueReferenceType>(T)) {
+    return Context.getPointerType(T->getPointeeType());
+  }
+
+  return T;
+}
+
+static void DoDecoratorChecks(Sema &S, const FunctionDecl *FD) {
+  auto &Context = S.Context;
+  auto IsDeco = FD->isDecorator();
+  auto IsTailDeco = FD->isTailDecorator();
+  auto IsOptionalDeco = FD->isOptionalDecorator();
+  auto IsLockingDeco = FD->isLockingDecorator();
+
+  if (!IsDeco && !IsTailDeco && !IsOptionalDeco && !IsLockingDeco) {
+    return;
+  }
+
+  // Tails, optionals and locking do not imply the decorator attribute.
+  if (!IsDeco && IsTailDeco) {
+    auto Range = FD->getAttr<TailDecoratorAttr>()->getRange();
+    S.Diag(Range.getBegin(), diag::err_decorator_attr_only)
+        << Range << FD->getQualifiedNameAsString()
+        << DecoratorKind::TailDecorator;
+  }
+
+  if (!IsDeco && IsOptionalDeco) {
+    auto Range = FD->getAttr<OptionalDecoratorAttr>()->getRange();
+    S.Diag(Range.getBegin(), diag::err_decorator_attr_only)
+        << Range << FD->getQualifiedNameAsString()
+        << DecoratorKind::OptionalDecorator;
+  }
+
+  if (!IsDeco && IsLockingDeco) {
+    auto Range = FD->getAttr<LockingDecoratorAttr>()->getRange();
+    S.Diag(Range.getBegin(), diag::err_decorator_attr_only)
+        << Range << FD->getQualifiedNameAsString()
+        << DecoratorKind::LockingDecorator;
+  }
+
+  // Tail checks.
+  if (IsDeco && IsTailDeco) {
+    auto BRTy =
+        StripQualifiers(Context, FD->getDecoratorBase()->getReturnType());
+
+    if (auto RV = dyn_cast<RValueReferenceType>(BRTy)) {
+      llvm_unreachable("Unimplemented!");
+    }
+
+    if (auto LV = dyn_cast<LValueReferenceType>(BRTy)) {
+      BRTy = Context.getPointerType(LV->getPointeeType());
+    }
+
+    BRTy = Context.getPointerType(BRTy);
+
+    // Check return type.
+    if (!FD->getReturnType()->isVoidType()) {
+      auto Range = FD->getReturnTypeSourceRange();
+      S.Diag(Range.getBegin(), diag::err_tail_wrong_ret_type)
+          << Range << FD->getName();
+      return;
+    }
+
+    // Check params size.
+    auto const NumParams = FD->getNumParams();
+
+    if (NumParams > 1) {
+      auto Range = FD->getParametersSourceRange();
+      S.Diag(Range.getBegin(), diag::err_tail_wrong_param_size) << Range;
+      return;
+    }
+
+    if (!FD->getDecoratorBase()->getReturnType()->isVoidType()) {
+      if (!NumParams) {
+        S.Diag(FD->getLocation(), diag::err_tail_wrong_param_size);
+        return;
+      }
+
+      // Check param type.
+      auto P = *FD->param_begin();
+      auto PTy = GetTailParamType(Context, P);
+
+      if (PTy != BRTy) {
+        auto Range = P->getSourceRange();
+        S.Diag(Range.getBegin(), diag::err_tail_wrong_param_type)
+            << Range << FD->getName() << BRTy.getAsString();
+      }
+    }
+  }
+}
+
 } // namespace clang
 
 //===----------------------------------------------------------------------===//
@@ -2325,6 +2469,11 @@ void clang::sema::AnalysisBasedWarnings::IssueWarnings(
 
     if (!analyzed)
       flushDiagnostics(S, fscope);
+  }
+
+  // Do decorator checks.
+  if (auto FD = dyn_cast<FunctionDecl>(D)) {
+    DoDecoratorChecks(S, FD);
   }
 
   // Warning: check missing 'return'

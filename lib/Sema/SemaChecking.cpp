@@ -4963,6 +4963,14 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
   Expr** Args = TheCall->getArgs();
   unsigned NumArgs = TheCall->getNumArgs();
 
+  // Prevent calls to decorators.
+  if (auto Func = dyn_cast<FunctionDecl>(TheCall->getCalleeDecl())) {
+    if (Func->isDecorator()) {
+      Diag(TheCall->getExprLoc(), diag::err_decorator_call);
+      return false;
+    }
+  }
+
   Expr *ImplicitThis = nullptr;
   if (IsMemberOperatorCall) {
     // If this is a call to a member operator, hide the first argument

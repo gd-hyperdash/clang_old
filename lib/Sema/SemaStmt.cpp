@@ -3973,6 +3973,16 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   bool HasDependentReturnType = FnRetType->isDependentType();
 
   ReturnStmt *Result = nullptr;
+
+  if (RetValExp) {
+    FunctionDecl *FD = cast<FunctionDecl>(CurContext);
+    if (FD->isDecorator() && !FD->isLockingDecorator()) {
+      Diag(ReturnLoc, diag::err_decorator_return_has_expr)
+          << RetValExp->getSourceRange();
+      RetValExp = nullptr;
+    }
+  }
+
   if (FnRetType->isVoidType()) {
     if (RetValExp) {
       if (isa<InitListExpr>(RetValExp)) {
@@ -4059,16 +4069,28 @@ StmtResult Sema::BuildReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
     } else {
       // C99 6.8.6.4p1 (ext_ since GCC warns)
       // C90 6.6.6.4p4
-      unsigned DiagID = getLangOpts().C99 ? diag::ext_return_missing_expr
-                                          : diag::warn_return_missing_expr;
-      // Note that at this point one of getCurFunctionDecl() or
-      // getCurMethodDecl() must be non-null (see above).
-      assert((getCurFunctionDecl() || getCurMethodDecl()) &&
-             "Not in a FunctionDecl or ObjCMethodDecl?");
-      bool IsMethod = FD == nullptr;
-      const NamedDecl *ND =
-          IsMethod ? cast<NamedDecl>(getCurMethodDecl()) : cast<NamedDecl>(FD);
-      Diag(ReturnLoc, DiagID) << ND << IsMethod;
+      unsigned DiagID = 0;
+
+      if (FD && FD->isDecorator()) {
+        if (FD->isLockingDecorator()) {
+          DiagID = diag::err_decorator_return_missing_expr;
+          FD->setInvalidDecl();
+        }
+      } else {
+        DiagID = getLangOpts().C99 ? diag::ext_return_missing_expr
+                                   : diag::warn_return_missing_expr;
+      }
+
+      if (DiagID) {
+        // Note that at this point one of getCurFunctionDecl() or
+        // getCurMethodDecl() must be non-null (see above).
+        assert((getCurFunctionDecl() || getCurMethodDecl()) &&
+               "Not in a FunctionDecl or ObjCMethodDecl?");
+        bool IsMethod = FD == nullptr;
+        const NamedDecl *ND = IsMethod ? cast<NamedDecl>(getCurMethodDecl())
+                                       : cast<NamedDecl>(FD);
+        Diag(ReturnLoc, DiagID) << ND << IsMethod;
+      }
     }
 
     Result = ReturnStmt::Create(Context, ReturnLoc, /* RetExpr=*/nullptr,

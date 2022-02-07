@@ -3482,7 +3482,7 @@ void CodeGenFunction::EmitTrapCheck(llvm::Value *Checked,
 
   // If we're optimizing, collapse all calls to trap down to just one per
   // check-type per function to save on code size.
-  if (TrapBBs.size() <= CheckHandlerID)
+  if (TrapBBs.size() <= static_cast<size_t>(CheckHandlerID))
     TrapBBs.resize(CheckHandlerID + 1);
   llvm::BasicBlock *&TrapBB = TrapBBs[CheckHandlerID];
 

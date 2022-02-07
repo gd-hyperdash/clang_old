@@ -489,6 +489,45 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
   data().IsParsingBaseSpecifiers = false;
 }
 
+bool CXXRecordDecl::hasDynamicLinkage() const {
+  return getAttr<DynamicLinkageAttr>();
+}
+
+StringRef CXXRecordDecl::getDynamicMID() const {
+  if (auto A = getAttr<DynamicLinkageAttr>()) {
+    return A->getMID();
+  }
+
+  return StringRef();
+}
+
+bool CXXRecordDecl::isRecordExtension() const {
+  return hasAttr<RecordExtensionAttr>();
+}
+
+TypeSourceInfo *CXXRecordDecl::getExtensionBaseLoc() const {
+  if (auto A = getAttr<RecordExtensionAttr>()) {
+    return A->getBaseLoc();
+  }
+
+  return nullptr;
+}
+
+CXXRecordDecl *CXXRecordDecl::getExtensionBase() const {
+  if (auto Loc = getExtensionBaseLoc()) {
+    return Loc->getType()->getAsCXXRecordDecl();
+  }
+
+  return nullptr;
+}
+
+void CXXRecordDecl::setExtensionBaseLoc(TypeSourceInfo *TSI) {
+  if (auto A = getAttr<RecordExtensionAttr>()) {
+    *reinterpret_cast<TypeSourceInfo **>(
+        reinterpret_cast<std::uintptr_t>(this) + sizeof(InheritableAttr)) = TSI;
+  }
+}
+
 unsigned CXXRecordDecl::getODRHash() const {
   assert(hasDefinition() && "ODRHash only for records with definitions");
 
@@ -2487,6 +2526,10 @@ bool CXXMethodDecl::isLambdaStaticInvoker() const {
   const CXXRecordDecl *P = getParent();
   return P->isLambda() && getDeclName().isIdentifier() &&
          getName() == getLambdaStaticInvokerName();
+}
+
+bool CXXMethodDecl::hasDynamicLinkage() const {
+  return getParent()->hasDynamicLinkage();
 }
 
 CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,

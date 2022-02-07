@@ -33,6 +33,7 @@
 #include "clang/Sema/DelayedDiagnostic.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/ML.h"
 #include "clang/Sema/ParsedAttr.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
@@ -7827,7 +7828,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
 
   switch (AL.getKind()) {
   default:
-    if (AL.getInfo().handleDeclAttribute(S, D, AL) != ParsedAttrInfo::NotHandled)
+    if (AL.getInfo().handleDeclAttribute(S, D, AL) !=
+        ParsedAttrInfo::NotHandled)
       break;
     if (!AL.isStmtAttr()) {
       // Type attributes are handled elsewhere; silently move on.
@@ -7930,13 +7932,13 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handlePassObjectSizeAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Constructor:
-      handleConstructorAttr(S, D, AL);
+    handleConstructorAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Deprecated:
     handleDeprecatedAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Destructor:
-      handleDestructorAttr(S, D, AL);
+    handleDestructorAttr(S, D, AL);
     break;
   case ParsedAttr::AT_EnableIf:
     handleEnableIfAttr(S, D, AL);
@@ -8111,7 +8113,7 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
     handleVecTypeHint(S, D, AL);
     break;
   case ParsedAttr::AT_InitPriority:
-      handleInitPriorityAttr(S, D, AL);
+    handleInitPriorityAttr(S, D, AL);
     break;
   case ParsedAttr::AT_Packed:
     handlePackedAttr(S, D, AL);
@@ -8437,6 +8439,35 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
 
   case ParsedAttr::AT_UsingIfExists:
     handleSimpleAttribute<UsingIfExistsAttr>(S, D, AL);
+    break;
+
+  // ML attributes.
+  case ParsedAttr::AT_LinkName:
+    handleLinkNameAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_DynamicLinkage:
+    handleDynamicLinkageAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_Decorator:
+    handleDecoratorAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_TailDecorator:
+    handleTailDecoratorAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_OptionalDecorator:
+    handleOptionalDecoratorAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_LockingDecorator:
+    handleLockingDecoratorAttr(S, D, AL);
+    break;
+
+  case ParsedAttr::AT_RecordExtension:
+    handleRecordExtensionAttr(S, D, AL);
     break;
   }
 }

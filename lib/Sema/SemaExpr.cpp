@@ -2563,6 +2563,19 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
       if (SS.isValid())
         CCC->setTypoNNS(SS.getScopeRep());
     }
+
+    // If we're in the context of an extension decorator, attempt to lookup the
+    // member from the base.
+    if (MLExt.isDecoratorContext()) {
+      auto E = getCurrentClass(S, &SS);
+      if (E && E->isRecordExtension()) {
+        if (auto Base = MLExt.GetDecoratorMember(E, R.getLookupNameInfo(),
+                                                 TemplateKWLoc, TemplateArgs)) {
+          return Base;
+        }
+      }
+    }
+
     // FIXME: DiagnoseEmptyLookup produces bad diagnostics if we're looking for
     // a template name, but we happen to have always already looked up the name
     // before we get here if it must be a template name.

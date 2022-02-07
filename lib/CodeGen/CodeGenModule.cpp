@@ -2862,8 +2862,27 @@ ConstantAddress CodeGenModule::GetWeakRefReference(const ValueDecl *VD) {
   return ConstantAddress(Aliasee, Alignment);
 }
 
+static llvm::FunctionType *GetBaseEmitType(CodeGenModule &CGM,
+                                           const FunctionDecl *Base) {
+  auto &FI = CGM.getTypes().arrangeGlobalDeclaration(Base);
+  return CGM.getTypes().GetFunctionType(FI);
+}
+
+static void ForceEmitBase(CodeGenModule &CGM, FunctionDecl *FD) {
+  auto &FI = CGM.getTypes().arrangeGlobalDeclaration(FD);
+  auto Ty = CGM.getTypes().GetFunctionType(FI);
+  return (void)CGM.GetAddrOfFunction(FD, Ty);
+}
+
 void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   const auto *Global = cast<ValueDecl>(GD.getDecl());
+
+  // If this is a decorator, emit its base.
+  if (auto FD = dyn_cast<FunctionDecl>(Global)) {
+    if (auto Base = FD->getDecoratorBase()) {
+      ForceEmitBase(*this, Base);
+    }
+  }
 
   // Weak references don't produce any output by themselves.
   if (Global->hasAttr<WeakRefAttr>())
@@ -3484,6 +3503,30 @@ llvm::Constant *CodeGenModule::GetOrCreateMultiVersionResolver(
   return Resolver;
 }
 
+StringRef CodeGenModule::getMangledDynamicRecord(GlobalDecl GD) {
+  std::string Buffer;
+  llvm::raw_string_ostream S(Buffer);
+  auto R = cast<CXXRecordDecl>(GD.getDecl());
+  auto CanonicalGD = GD.getCanonicalDecl();
+  auto &MangleCtx = getCXXABI().getMangleContext();
+
+  auto FoundName = MangledDeclNames.find(CanonicalGD);
+  if (FoundName != MangledDeclNames.end())
+    return FoundName->second;
+
+  assert(MangleCtx.shouldMangleCXXName(R) && "Invalid record?");
+
+  MangleCtx.mangleCXXRTTIName(Context.getRecordType(R), S);
+  auto Result = Manglings.insert(std::make_pair(Buffer, GD));
+  return MangledDeclNames[CanonicalGD] = Result.first->first();
+}
+
+static llvm::ConstantAsMetadata *GetMDIntValue(llvm::LLVMContext &C,
+                                               std::uint64_t const V) {
+  return llvm::ConstantAsMetadata::get(
+      llvm::ConstantInt::get(C, llvm::APInt(64, V, false)));
+}
+
 /// GetOrCreateLLVMFunction - If the specified mangled name is not in the
 /// module, create and return an llvm Function with the specified type. If there
 /// is something in the module with the specified name, return it potentially
@@ -3492,10 +3535,11 @@ llvm::Constant *CodeGenModule::GetOrCreateMultiVersionResolver(
 /// If D is non-null, it specifies a decl that correspond to this.  This is used
 /// to set the attributes on the function when it is first created.
 llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
-    StringRef MangledName, llvm::Type *Ty, GlobalDecl GD, bool ForVTable,
+    StringRef OriginalMangledName, llvm::Type *Ty, GlobalDecl GD, bool ForVTable,
     bool DontDefer, bool IsThunk, llvm::AttributeList ExtraAttrs,
     ForDefinition_t IsForDefinition) {
   const Decl *D = GD.getDecl();
+  StringRef MangledName = OriginalMangledName;
 
   // Any attempts to use a MultiVersion function should result in retrieving
   // the iFunc instead. Name Mangling will handle the rest of the changes.
@@ -3581,9 +3625,68 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
     IsIncompleteFunction = true;
   }
 
+  // Handle link name.
+  if (auto const *FD = dyn_cast_or_null<FunctionDecl>(D)) {
+    if (FD->hasCustomLinkName()) {
+      MangledName = FD->getCustomLinkName();
+    }
+  }
+
   llvm::Function *F =
       llvm::Function::Create(FTy, llvm::Function::ExternalLinkage,
                              Entry ? StringRef() : MangledName, &getModule());
+
+  if (auto const *FD = dyn_cast_or_null<FunctionDecl>(D)) {
+    // Handle dynamic linkage.
+    if (FD->hasDynamicLinkage()) {
+      StringRef RecordSym;
+      StringRef MID;
+
+      if (FD->isCXXClassMember()) {
+        auto R = cast<CXXRecordDecl>(FD->getParent());
+        MID = R->getDynamicMID();
+        if (!cast<CXXMethodDecl>(FD)->isStatic()) {
+          RecordSym = getMangledDynamicRecord(R);
+        }
+        MID = R->getDynamicMID();
+      } else {
+        MID = FD->getDynamicMID();
+      }
+
+      auto Node = llvm::MDNode::get(VMContext,
+                                    {llvm::MDString::get(VMContext, RecordSym),
+                                     llvm::MDString::get(VMContext, MID)});
+      F->setMetadata(ml::DYNAMIC, Node);
+    }
+
+    // Handle decorators.
+    if (FD->isDecorator()) {
+      std::uint64_t Flags = ml::flags::NONE;
+      std::uint64_t ArgCount = FD->isCXXClassMember() ? 1u : 0u;
+      auto Base = FD->getDecoratorBase();
+      assert(Base && "No base?");
+      auto Sym = getMangledName(Base);
+      assert(!Sym.empty() && "Sym was empty!");
+
+      if (FD->isTailDecorator()) {
+        Flags |= ml::flags::TAIL;
+      }
+
+      if (FD->isOptionalDecorator()) {
+        Flags |= ml::flags::OPTIONAL;
+      }
+
+      if (FD->isLockingDecorator()) {
+        Flags |= ml::flags::LOCKING;
+      }
+
+      auto Node =
+          llvm::MDNode::get(VMContext, {llvm::MDString::get(VMContext, Sym),
+                                        GetMDIntValue(VMContext, Flags),
+                                        GetMDIntValue(VMContext, ArgCount)});
+      F->setMetadata(ml::DECORATOR, Node);
+    }
+  }
 
   // If we already created a function with the same mangled name (but different
   // type) before, take its name and add it to the list of functions to be

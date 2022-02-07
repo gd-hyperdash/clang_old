@@ -3823,3 +3823,57 @@ def EnforceTCBLeaf : InheritableAttr {
   let Documentation = [EnforceTCBLeafDocs];
   bit InheritEvenIfAlreadyPresent = 1;
 }
+
+def LinkName : InheritableAttr {
+  let Spellings = [GNU<"link_name">, Declspec<"link_name">,
+                  CXX11<"", "link_name", 201703>, C2x<"", "link_name", 201904>];
+  let Args = [StringArgument<"Symbol">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def DynamicLinkage : InheritableAttr {
+  let Spellings = [GNU<"dynamic">, Declspec<"dynamic">,
+                  CXX11<"", "dynamic", 201703>, C2x<"", "dynamic", 201904>];
+  let Args = [StringArgument<"MID", 1>];
+  let Subjects = SubjectList<[Function, CXXRecord], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def Decorator : InheritableAttr {
+  let Spellings = [GNU<"decorator">, Declspec<"decorator">,
+                  CXX11<"", "decorator", 201703>, C2x<"", "decorator", 201904>];
+  let Args = [DeclArgument<Function, "Base">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def TailDecorator : InheritableAttr {
+  let Spellings = [GNU<"tail">, Declspec<"tail">,
+                  CXX11<"", "tail", 201703>, C2x<"", "tail", 201904>];
+  let Args = [TypeArgument<"Type", 1>];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def OptionalDecorator : InheritableAttr {
+  let Spellings = [GNU<"optional">, Declspec<"optional">,
+                  CXX11<"", "optional", 201703>, C2x<"", "optional", 201904>];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def LockingDecorator : InheritableAttr {
+  let Spellings = [GNU<"locking">, Declspec<"locking">,
+                  CXX11<"", "locking", 201703>, C2x<"", "locking", 201904>];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [Undocumented];
+}
+
+def RecordExtension :InheritableAttr {
+  let Spellings = [GNU<"extension">, Declspec<"extension">,
+                  CXX11<"", "extension", 201703>, C2x<"", "extension", 201904>];
+  let Args = [TypeArgument<"Base">];
+  let Subjects = SubjectList<[CXXRecord], ErrorDiag>;
+  let Documentation = [Undocumented];
+}

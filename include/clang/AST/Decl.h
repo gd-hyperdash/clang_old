@@ -2419,6 +2419,31 @@ public:
   /// an attribute on its declaration or its type.
   bool isNoReturn() const;
 
+  /// Determines whether this function has a custom link name.
+  bool hasCustomLinkName() const;
+
+  // Get this function custom link name.
+  StringRef getCustomLinkName() const;
+
+  /// Determines whether this function has dynamic linkage.
+  virtual bool hasDynamicLinkage() const;
+
+  /// Get this dynamic module ID.
+  StringRef getDynamicMID() const;
+
+  /// Determines whether this function is a decorator.
+  bool isDecorator() const;
+  bool isTailDecorator() const;
+  bool isOptionalDecorator() const;
+  bool isLockingDecorator() const;
+
+  /// Get the base for a decorator.
+  FunctionDecl *getDecoratorBase() const;
+  void setDecoratorBase(FunctionDecl *FD);
+
+  /// Get the type specified by the tail attribute.
+  TypeSourceInfo *getTailTypeLoc() const;
+
   /// True if the function was a definition but its body was skipped.
   bool hasSkippedBody() const { return FunctionDeclBits.HasSkippedBody; }
   void setHasSkippedBody(bool Skipped = true) {

@@ -51,6 +51,7 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/ExternalSemaSource.h"
 #include "clang/Sema/IdentifierResolver.h"
+#include "clang/Sema/ML.h"
 #include "clang/Sema/ObjCMethodList.h"
 #include "clang/Sema/Ownership.h"
 #include "clang/Sema/Scope.h"
@@ -9165,6 +9166,9 @@ public:
   /// their locations, so that repeated attempts to correct an identifier in a
   /// given location are ignored if typo correction already failed for it.
   IdentifierSourceLocations TypoCorrectionFailures;
+
+  /// Custom ML utilities.
+  SemaExtension MLExt;
 
   /// Worker object for performing CFG-based warnings.
   sema::AnalysisBasedWarnings AnalysisWarnings;
