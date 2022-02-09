@@ -552,6 +552,11 @@ void clang::handleLinkNameAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
 
   // Check symbol.
+  if (Symbol.empty()) {
+    S.Diag(AL.getLoc(), diag::err_invalid_link_name);
+    return;
+  }
+
   for (auto c : Symbol) {
     if (c == '\0') {
       S.Diag(AL.getLoc(), diag::err_invalid_link_name);
