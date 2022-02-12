@@ -37,10 +37,6 @@ static auto constexpr ML_EXT_DATA = "MLExtensionImpl";
 // Helpers
 //===-----------------------------------------------------------------------===//
 
-static bool checkMangling(const StringRef& S) {
-
-}
-
 static Expr *UnwrapDecoratorExpr(Expr *E) {
   if (auto UO = dyn_cast<UnaryOperator>(E)) {
     if (UO->getOpcode() == UnaryOperatorKind::UO_AddrOf) {
@@ -116,20 +112,23 @@ static ExtImpl const FindExtensionImpl(TranslationUnitDecl *TU) {
 // SemaExtension
 //===-----------------------------------------------------------------------===//
 
-ClassTemplateDecl *SemaExtension::CastTypeToTemplateClass(QualType T) {
-  if (!T.isNull()) {
-    if (auto TST = T->getAs<TemplateSpecializationType>()) {
-      return dyn_cast<ClassTemplateDecl>(
-          TST->getTemplateName().getAsTemplateDecl());
+Expr *SemaExtension::GetBaseExpr(CXXRecordDecl *Base,
+                                 const DeclarationNameInfo &DNI, bool IsDtor) {
+  DeclarationNameInfo DeclName;
+
+  if (IsDtor) {
+    if (auto Dtor = Base->getDestructor()) {
+      DeclName = Dtor->getNameInfo();
+    } else {
+      return nullptr;
     }
+  } else {
+    DeclName = DNI;
   }
 
-  return nullptr;
-}
-
-Expr *SemaExtension::GetBaseExpr(CXXRecordDecl *Base,
-                                 const DeclarationNameInfo &DNI) {
-  LookupResult R(S, DNI, Sema::LookupNameKind::LookupMemberName);
+  LookupResult R(S, DeclName,
+                 IsDtor ? Sema::LookupNameKind::LookupDestructorName
+                        : Sema::LookupNameKind::LookupMemberName);
 
   // If the base is a specialization, make sure it's fully instantiated.
   if (auto Spec = dyn_cast<ClassTemplateSpecializationDecl>(Base)) {
@@ -151,7 +150,7 @@ Expr *SemaExtension::GetBaseExpr(CXXRecordDecl *Base,
     auto Q = BuildRecordQualifier(Base);
 
     // Return as expression.
-    return Unresolved.size() == 1
+    return Unresolved.size() == 1u
                ? BuildDeclRef(M, M->getType(), M->getNameInfo(), Q, true,
                               DNI.getLoc())
                : BuildLookup(Base, Q, DNI, Unresolved, true, DNI.getLoc());
@@ -163,7 +162,7 @@ Expr *SemaExtension::GetBaseExpr(CXXRecordDecl *Base,
 FunctionDecl *SemaExtension::FindBaseOfDecorator(FunctionDecl *D,
                                                  Expr *WrappedExpr) {
   FunctionDecl *FD = nullptr;
-  CXXRecordDecl *BaseOrSpec = nullptr;
+  CXXRecordDecl *ClassBase = nullptr;
   bool HasCheckedType = false;
 
   // Defer uninstantiated templates.
@@ -185,42 +184,28 @@ FunctionDecl *SemaExtension::FindBaseOfDecorator(FunctionDecl *D,
     auto P = M->getParent();
 
     if (P->isRecordExtension()) {
-      BaseOrSpec = P->getExtensionBase();
+      ClassBase = P->getExtensionBase();
     }
   }
 
   // Handle dependant base.
-  /*
-  if (auto DSE = dyn_cast<DependentScopeDeclRefExpr>(UnwrappedExpr)) {
-    llvm::SmallVector<TemplateArgument> TemplateArgs;
-    assert(Ext && "No extension?");
+  if (auto IL = dyn_cast<IntegerLiteral>(UnwrappedExpr)) {
+    Expr *DepExpr = nullptr;
+    assert(ClassBase && "Base was nullptr!");
+    auto ID = IL->getValue().getZExtValue();
 
-    // Get template arguments.
-    auto Q = Ext->getExtensionBaseLoc()->getType();
-    auto TemplateBase = CastTypeToTemplateClass(Q);
-    auto &ExtArgs =
-        cast<ClassTemplateSpecializationDecl>(Ext)->getTemplateArgs();
-
-    if (auto PartialSpecTy = Q->getAs<TemplateSpecializationType>()) {
-        // TODO: This algorithm is very crappy.
-      for (auto i = 0u; i < PartialSpecTy->getNumArgs(); ++i) {
-        auto &A = PartialSpecTy->getArg(i);
-        if (auto ATy = A.getAsType()->getAs<TemplateTypeParmType>()) {
-          TemplateArgs.push_back(ExtArgs[ATy->getIndex()]);
-        } else {
-          TemplateArgs.push_back(A);
-        }
-      }
+    if (IsDeferredDecoratorDtor(ID)) {
+      setParsingTilde(true);
+      DepExpr = GetBaseExpr(ClassBase, true);
+      setParsingTilde(false);
+    } else {
+      DepExpr = GetBaseExpr(ClassBase, GetDecoratorDNI(ID));
     }
 
-    // Build specialization.
-    BaseOrSpec = BuildClassSpecialization(TemplateBase, TemplateArgs);
-
-    // Resolve base.
-    WrappedExpr = GetBaseExpr(BaseOrSpec, DSE->getNameInfo());
-    UnwrappedExpr = UnwrapDecoratorExpr(WrappedExpr);
+    if (DepExpr) {
+      UnwrappedExpr = UnwrapDecoratorExpr(DepExpr);
+    }
   }
-  */
 
   // Handle simple expression.
   if (auto DRE = dyn_cast<DeclRefExpr>(UnwrappedExpr)) {
@@ -229,8 +214,7 @@ FunctionDecl *SemaExtension::FindBaseOfDecorator(FunctionDecl *D,
 
   // Handle lookups.
   if (auto ULE = dyn_cast<UnresolvedLookupExpr>(UnwrappedExpr)) {
-    // Lookup base.
-    auto DT = GetDecoratorType(S, D, BaseOrSpec);
+    auto DT = GetDecoratorType(S, D, ClassBase);
 
     if (!DT.isNull() && ULE->isOverloaded()) {
       DeclAccessPair P;
@@ -256,9 +240,9 @@ FunctionDecl *SemaExtension::FindBaseOfDecorator(FunctionDecl *D,
 
   // Methods can only be decorated in the context of an extension.
   if (auto BaseMethod = dyn_cast<CXXMethodDecl>(FD)) {
-    assert(BaseOrSpec && "No base?");
+    assert(ClassBase && "No base?");
     // Method base and extension base must match.
-    if (BaseOrSpec != BaseMethod->getParent()) {
+    if (ClassBase != BaseMethod->getParent()) {
       S.Diag(D->getLocation(), diag::err_decorator_argument_type_mismatch)
           << FD->getQualifiedNameAsString();
       return nullptr;
@@ -297,9 +281,31 @@ TypeSourceInfo *SemaExtension::AttachExtensionBase(CXXRecordDecl *E,
   auto Data = FindExtensionImpl(TU);
 
   if (Data) {
-    auto Base = B->getType()->getAsCXXRecordDecl();
+    QualType BaseType;
+
+    // Handle dependant base.
+    if (B->getType()->isDependentType()) {
+      auto CTSD = cast<ClassTemplateSpecializationDecl>(E);
+
+      if (auto TPT = B->getType()->getAs<TemplateTypeParmType>()) {
+        for (auto i = 0u; i < TPT->getDepth(); ++i) {
+          CTSD = cast<ClassTemplateSpecializationDecl>(CTSD->getParent());
+        }
+
+        auto &Arg = CTSD->getTemplateArgs().get(TPT->getIndex());
+        BaseType = Arg.getAsType();
+      } else if (auto TST = B->getType()->getAs<TemplateSpecializationType>()) {
+        llvm_unreachable("TODO!");
+      }
+    } else {
+      BaseType = B->getType();
+    }
+
+    auto Base = BaseType->getAsCXXRecordDecl();
+    assert(Base && "Base was nullptr!");
+
     TemplateArgument ExtArg(Context.getRecordType(E));
-    TemplateArgument BaseArg(B->getType().getCanonicalType());
+    TemplateArgument BaseArg(BaseType.getCanonicalType());
     auto TemplateArgs =
         TemplateArgumentList::CreateCopy(Context, {ExtArg, BaseArg});
     auto Spec = BuildClassSpecialization(Data.Impl, TemplateArgs->asArray());
@@ -308,7 +314,7 @@ TypeSourceInfo *SemaExtension::AttachExtensionBase(CXXRecordDecl *E,
     // Complete base type when needed.
     if (auto BaseSpec = dyn_cast<ClassTemplateSpecializationDecl>(Base)) {
       if (!ForceCompleteClassSpecialization(BaseSpec)) {
-        return false;
+        return nullptr;
       }
     }
 
@@ -326,11 +332,30 @@ TypeSourceInfo *SemaExtension::AttachExtensionBase(CXXRecordDecl *E,
 
     if (Specifier && !S.AttachBaseSpecifiers(E, {Specifier}) &&
         InsertFriend(Base, E) && InsertFriend(E, Spec)) {
-      return B;
+      return Context.getTrivialTypeSourceInfo(Context.getRecordType(Base));
     }
   }
 
   return nullptr;
+}
+
+std::uint64_t SemaExtension::DeferDecoratorDNI(const DeclarationNameInfo& DNI) {
+  DeferredDNI.push_back(DNI);
+  return DeferredDNI.size() - 1u;
+}
+
+DeclarationNameInfo SemaExtension::GetDecoratorDNI(const std::uint64_t Value) {
+  assert(!IsDeferredDecoratorDtor(Value) && Value < DeferredDNI.size() &&
+         "Invalid value!");
+  return DeferredDNI[Value];
+}
+
+std::uint64_t SemaExtension::DeferDecoratorDtor() {
+  return static_cast<std::uint64_t>(1ull << 63);
+}
+
+bool SemaExtension::IsDeferredDecoratorDtor(const std::uint64_t Value) {
+  return static_cast<bool>((Value >> 63) & 1);
 }
 
 Expr *SemaExtension::GetDecoratorMember(
@@ -341,13 +366,11 @@ Expr *SemaExtension::GetDecoratorMember(
 
   if (!Base) {
     // Handle uninstantiated dependent bases.
-    auto TD = CastTypeToTemplateClass(E->getExtensionBaseLoc()->getType());
-    return TD ? BuildDependantRef(BuildRecordQualifier(TD->getTemplatedDecl()),
-                                  TemplateKWLoc, DNI, TemplateArgs, true)
-              : nullptr;
+    return BuildInteger(isParsingTilde() ? DeferDecoratorDtor()
+                                         : DeferDecoratorDNI(DNI));
   }
 
-  return GetBaseExpr(Base, DNI);
+  return GetBaseExpr(Base, DNI, isParsingTilde());
 }
 
 bool SemaExtension::HandleDecoratorInstantiation(FunctionDecl *D) {
@@ -366,17 +389,17 @@ bool SemaExtension::HandleDecoratorInstantiation(FunctionDecl *D) {
   return false;
 }
 
-bool SemaExtension::HandleExtensionInstantiation(ClassTemplateSpecializationDecl *Spec) {
+bool SemaExtension::HandleExtensionInstantiation(
+    ClassTemplateSpecializationDecl *Spec) {
   auto TD = Spec->getSpecializedTemplate();
   assert(TD && "No template?");
   auto I = DeferredExtensions.find(TD);
 
-  if (I != DeferredExtensions.end()) {
+  if (I != DeferredExtensions.end())
     if (auto Base = AttachExtensionBase(Spec, I->second)) {
       Spec->setExtensionBaseLoc(Base);
       return true;
     }
-  }
 
   return false;
 }
@@ -415,6 +438,11 @@ NestedNameSpecifierLoc SemaExtension::BuildRecordQualifier(RecordDecl *R,
 UnaryOperator *SemaExtension::BuildAddrOf(Expr *E, SourceLocation Loc) {
   auto UO = S.CreateBuiltinUnaryOp(Loc, UnaryOperatorKind::UO_AddrOf, E);
   return UO.isUsable() ? cast<UnaryOperator>(UO.get()) : nullptr;
+}
+
+Expr *SemaExtension::BuildInteger(std::uint64_t const Value) {
+  return IntegerLiteral::Create(S.Context, llvm::APInt(64u, Value),
+                         S.Context.LongLongTy, SourceLocation());
 }
 
 Expr *SemaExtension::BuildDeclRef(ValueDecl *V, QualType T,
@@ -525,13 +553,9 @@ bool SemaExtension::ForceCompleteFunction(FunctionDecl *FD) {
 }
 
 bool SemaExtension::InsertFriend(CXXRecordDecl *Base, CXXRecordDecl *Friend) {
-
-
-  auto Ty = S.Context.CreateTypeSourceInfo(S.Context.getRecordType(Friend));
+  auto Ty = S.Context.getTrivialTypeSourceInfo(S.Context.getRecordType(Friend));
 
   if (Ty) {
-    Ty->getTypeLoc().initialize(S.Context, SourceLocation());
-
     return FriendDecl::Create(S.Context, Base, Base->getLocation(),
                               FriendDecl::FriendUnion(Ty), SourceLocation());
   }
@@ -557,6 +581,11 @@ void clang::handleLinkNameAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
     return;
   }
 
+  if (S.MLExt.hasLinkName(Symbol)) {
+    S.Diag(AL.getLoc(), diag::err_link_name_already_defined);
+    return;
+  }
+
   for (auto c : Symbol) {
     if (c == '\0') {
       S.Diag(AL.getLoc(), diag::err_invalid_link_name);
@@ -566,6 +595,7 @@ void clang::handleLinkNameAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
 
   // Add attribute.
   D->addAttr(::new (S.Context) LinkNameAttr(S.Context, AL, Symbol));
+  S.MLExt.cacheLinkName(Symbol);
 }
 
 void clang::handleDynamicLinkageAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
@@ -683,12 +713,6 @@ void clang::handleRecordExtensionAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   }
 
   assert(TSI && "Type was nullptr!");
-
-  // TODO: we avoid template bases for now.
-  if (T->isDependentType()) {
-    S.Diag(AL.getLoc(), diag::err_decorator_argument_not_valid);
-    return;
-  }
 
   // Add attribute.
   if (auto BaseType = S.MLExt.AttachExtensionBase(E, TSI)) {

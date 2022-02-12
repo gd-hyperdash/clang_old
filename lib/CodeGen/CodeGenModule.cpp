@@ -2862,16 +2862,22 @@ ConstantAddress CodeGenModule::GetWeakRefReference(const ValueDecl *VD) {
   return ConstantAddress(Aliasee, Alignment);
 }
 
-static llvm::FunctionType *GetBaseEmitType(CodeGenModule &CGM,
-                                           const FunctionDecl *Base) {
-  auto &FI = CGM.getTypes().arrangeGlobalDeclaration(Base);
-  return CGM.getTypes().GetFunctionType(FI);
+static GlobalDecl CastBaseAsGlobal(FunctionDecl *FD) {
+  if (auto Dtor = dyn_cast<CXXDestructorDecl>(FD)) {
+    return GlobalDecl(Dtor, CXXDtorType::Dtor_Base);
+  }
+
+  return FD;
 }
 
-static void ForceEmitBase(CodeGenModule &CGM, FunctionDecl *FD) {
-  auto &FI = CGM.getTypes().arrangeGlobalDeclaration(FD);
-  auto Ty = CGM.getTypes().GetFunctionType(FI);
-  return (void)CGM.GetAddrOfFunction(FD, Ty);
+static void ForceEmitBase(CodeGenModule &CGM, GlobalDecl GD) {
+  if (isa<CXXDestructorDecl>(GD.getDecl())) {
+    (void)CGM.getAddrOfCXXStructor(GD);
+  } else {
+    auto &FI = CGM.getTypes().arrangeGlobalDeclaration(GD);
+    auto Ty = CGM.getTypes().GetFunctionType(FI);
+    (void)CGM.GetAddrOfFunction(GD, Ty);
+  }
 }
 
 void CodeGenModule::EmitGlobal(GlobalDecl GD) {
@@ -2880,7 +2886,7 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   // If this is a decorator, emit its base.
   if (auto FD = dyn_cast<FunctionDecl>(Global)) {
     if (auto Base = FD->getDecoratorBase()) {
-      ForceEmitBase(*this, Base);
+      ForceEmitBase(*this, CastBaseAsGlobal(Base));
     }
   }
 
@@ -3665,7 +3671,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
       std::uint64_t ArgCount = FD->isCXXClassMember() ? 1u : 0u;
       auto Base = FD->getDecoratorBase();
       assert(Base && "No base?");
-      auto Sym = getMangledName(Base);
+      auto Sym = getMangledName(CastBaseAsGlobal(Base));
       assert(!Sym.empty() && "Sym was empty!");
 
       if (FD->isTailDecorator()) {

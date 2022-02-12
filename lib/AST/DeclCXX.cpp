@@ -523,8 +523,7 @@ CXXRecordDecl *CXXRecordDecl::getExtensionBase() const {
 
 void CXXRecordDecl::setExtensionBaseLoc(TypeSourceInfo *TSI) {
   if (auto A = getAttr<RecordExtensionAttr>()) {
-    *reinterpret_cast<TypeSourceInfo **>(
-        reinterpret_cast<std::uintptr_t>(this) + sizeof(InheritableAttr)) = TSI;
+    A->setBaseLoc(TSI);
   }
 }
 

@@ -3876,4 +3876,7 @@ def RecordExtension :InheritableAttr {
   let Args = [TypeArgument<"Base">];
   let Subjects = SubjectList<[CXXRecord], ErrorDiag>;
   let Documentation = [Undocumented];
+  let AdditionalMembers = [{
+    void setBaseLoc(TypeSourceInfo *TSI) { base = TSI; }
+  }];
 }

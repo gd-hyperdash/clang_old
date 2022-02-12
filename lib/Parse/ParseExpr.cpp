@@ -1365,10 +1365,18 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
     return Res;
   }
 
+  case tok::tilde: { // unary-expression: '~' cast-expression
+    if (Actions.MLExt.isDecoratorContext()) {
+      Tok.setKind(tok::identifier);
+      Actions.MLExt.setParsingTilde(true);
+      Res = ParseCastExpression(AnyCastExpr);
+      Actions.MLExt.setParsingTilde(false);
+      return Res;
+    }
+  }
   case tok::star:          // unary-expression: '*' cast-expression
   case tok::plus:          // unary-expression: '+' cast-expression
   case tok::minus:         // unary-expression: '-' cast-expression
-  case tok::tilde:         // unary-expression: '~' cast-expression
   case tok::exclaim:       // unary-expression: '!' cast-expression
   case tok::kw___real:     // unary-expression: '__real' cast-expression [GNU]
   case tok::kw___imag: {   // unary-expression: '__imag' cast-expression [GNU]

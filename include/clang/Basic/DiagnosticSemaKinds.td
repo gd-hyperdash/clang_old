@@ -11354,6 +11354,8 @@ def err_riscv_builtin_invalid_lmul : Error<
 // link name
 def err_invalid_link_name : Error<
   "invalid link name">;
+def err_link_name_already_defined : Error<
+  "link name already defined">;
 
 // dynamic linkage
 def err_dynamic_method : Error<
