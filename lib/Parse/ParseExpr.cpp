@@ -1366,14 +1366,14 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   }
 
   case tok::tilde: { // unary-expression: '~' cast-expression
-    if (Actions.MLExt.isDecoratorContext()) {
+    if (Actions.ML.HandlingDecoratorAttr) {
       Tok.setKind(tok::identifier);
-      Actions.MLExt.setParsingTilde(true);
+      Actions.ML.HandlingDtor = true;
       Res = ParseCastExpression(AnyCastExpr);
-      Actions.MLExt.setParsingTilde(false);
+      Actions.ML.HandlingDtor = false;
       return Res;
     }
-  }
+  } LLVM_FALLTHROUGH;
   case tok::star:          // unary-expression: '*' cast-expression
   case tok::plus:          // unary-expression: '+' cast-expression
   case tok::minus:         // unary-expression: '-' cast-expression

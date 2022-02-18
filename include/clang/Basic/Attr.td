@@ -3870,7 +3870,7 @@ def LockingDecorator : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
-def RecordExtension :InheritableAttr {
+def RecordExtension : InheritableAttr {
   let Spellings = [GNU<"extension">, Declspec<"extension">,
                   CXX11<"", "extension", 201703>, C2x<"", "extension", 201904>];
   let Args = [TypeArgument<"Base">];

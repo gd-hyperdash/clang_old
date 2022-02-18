@@ -10923,9 +10923,10 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
     // We never need to emit an uninstantiated function template.
     if (FD->getTemplatedKind() == FunctionDecl::TK_FunctionTemplate)
       return false;
-    // Decorators are always emitted.
-    if (FD->isDecorator() && FD->hasBody()) {
-      return true;
+    // Always emit non-template decorators with bodies.
+    if (FD->isDecorator()) {
+      return FD->hasBody() && FD->getTemplatedKind() ==
+                                  FunctionDecl::TemplatedKind::TK_NonTemplate;
     }
   } else if (isa<PragmaCommentDecl>(D))
     return true;

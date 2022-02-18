@@ -2566,11 +2566,12 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
 
     // If we're in the context of an extension decorator, attempt to lookup the
     // member from the base.
-    if (MLExt.isDecoratorContext()) {
+    if (ML.HandlingDecoratorAttr) {
       auto E = getCurrentClass(S, &SS);
+      E = ML.MLT.GetExtensionRelatedRecord(E);
       if (E && E->isRecordExtension()) {
-        if (auto Base = MLExt.GetDecoratorMember(E, R.getLookupNameInfo(),
-                                                 TemplateKWLoc, TemplateArgs)) {
+        if (auto Base = ML.GetDecoratorMemberBaseExpr(
+                E, R.getLookupNameInfo(), TemplateKWLoc, TemplateArgs)) {
           return Base;
         }
       }
@@ -13671,7 +13672,7 @@ QualType Sema::CheckAddressOfOperand(ExprResult &OrigOp, SourceLocation OpLoc) {
     }
 
     // Taking the address of a dtor is illegal per C++ [class.dtor]p2.
-    if (!MLExt.isParsingTilde() && isa<CXXDestructorDecl>(MD))
+    if (!ML.HandlingDtor && isa<CXXDestructorDecl>(MD))
       Diag(OpLoc, diag::err_typecheck_addrof_dtor) << op->getSourceRange();
 
     QualType MPTy = Context.getMemberPointerType(

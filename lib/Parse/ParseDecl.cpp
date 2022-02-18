@@ -422,10 +422,10 @@ unsigned Parser::ParseAttributeArgsCommon(
             Uneval ? Sema::ExpressionEvaluationContext::Unevaluated
                    : Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
-        Actions.MLExt.setDecoratorContext(attributeIsDecoratorAttr(*AttrName));
+        Actions.ML.HandlingDecoratorAttr = attributeIsDecoratorAttr(*AttrName);
         ExprResult ArgExpr(
             Actions.CorrectDelayedTyposInExpr(ParseAssignmentExpression()));
-        Actions.MLExt.setDecoratorContext(false);
+        Actions.ML.HandlingDecoratorAttr = false;
 
         if (ArgExpr.isInvalid()) {
           SkipUntil(tok::r_paren, StopAtSemi);

@@ -1679,7 +1679,7 @@ Sema::AccessResult Sema::CheckConstructorAccess(SourceLocation UseLoc,
   // Prevent calls to extension ctors.
   if (NamingClass->isRecordExtension()) {
     auto FD = dyn_cast<FunctionDecl>(CurContext);
-    if (!FD || !MLExt.isInMLNamespace(FD)) {
+    if (!FD || !ML.isInMLNamespace(FD)) {
       Diag(UseLoc, diag::err_extension_initialization);
       return AR_inaccessible;
     }

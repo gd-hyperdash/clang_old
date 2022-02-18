@@ -2208,6 +2208,10 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(
                                  QualifierLoc.hasQualifier());
   }
 
+  // Handle decorator instantiation.
+  if (Function->isDecorator())
+    SemaRef.ML.MLT.HandleDecoratorInstantiation(Function);
+
   SemaRef.CheckFunctionDeclaration(/*Scope*/ nullptr, Function, Previous,
                                    IsExplicitSpecialization);
 
@@ -5067,13 +5071,6 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       Listener->FunctionDefinitionInstantiated(Function);
 
     savedContext.pop();
-  }
-
-  // If this is an instantiation of a decorator, find its base.
-  if (Function->isDecorator()) {
-    if (!MLExt.HandleDecoratorInstantiation(Function)) {
-      return;
-    }
   }
 
   DeclGroupRef DG(Function);

@@ -9168,7 +9168,7 @@ public:
   IdentifierSourceLocations TypoCorrectionFailures;
 
   /// Custom ML utilities.
-  SemaExtension MLExt;
+  SemaML ML;
 
   /// Worker object for performing CFG-based warnings.
   sema::AnalysisBasedWarnings AnalysisWarnings;
