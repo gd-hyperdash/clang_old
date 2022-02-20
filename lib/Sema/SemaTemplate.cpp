@@ -9808,13 +9808,6 @@ DeclResult Sema::ActOnExplicitInstantiation(
     Specialization->setTemplateSpecializationKind(TSK);
   }
 
-  // Handle extension specialization.
-  if (Specialization->isRecordExtension()) {
-    if (!MLExt.HandleExtensionInstantiation(Specialization)) {
-      return true;
-    }
-  }
-
   return Specialization;
 }
 

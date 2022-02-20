@@ -180,8 +180,20 @@ namespace {
       // methods may be added during this loop, since ASTConsumer callbacks
       // can be invoked if AST inspection results in declarations being added.
       HandlingTopLevelDeclRAII HandlingDecl(*this);
-      for (unsigned I = 0; I != DeferredInlineMemberFuncDefs.size(); ++I)
-        Builder->EmitTopLevelDecl(DeferredInlineMemberFuncDefs[I]);
+      for (unsigned I = 0; I != DeferredInlineMemberFuncDefs.size(); ++I) {
+        auto D = DeferredInlineMemberFuncDefs[I];
+
+        // Skip explicit extension instantiations.
+        if (auto M = dyn_cast<CXXMethodDecl>(D)) {
+          auto R = M->getParent();
+          if (R->isRecordExtension() && !R->getExtensionBaseLoc()) {
+            continue;
+          }
+        }
+
+        Builder->EmitTopLevelDecl(D);
+      }
+
       DeferredInlineMemberFuncDefs.clear();
     }
 

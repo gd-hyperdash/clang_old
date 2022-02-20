@@ -502,6 +502,13 @@ StringRef CXXRecordDecl::getDynamicMID() const {
 }
 
 bool CXXRecordDecl::isRecordExtension() const {
+  if (auto Spec = dyn_cast<ClassTemplateSpecializationDecl>(this)) {
+    auto CTD = Spec->getSpecializedTemplate();
+    auto Template = CTD ? CTD->getTemplatedDecl() : nullptr;
+    assert(Template && "No template?");
+    return Template->hasAttr<RecordExtensionAttr>();
+  }
+
   return hasAttr<RecordExtensionAttr>();
 }
 

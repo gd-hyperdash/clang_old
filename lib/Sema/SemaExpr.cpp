@@ -2568,7 +2568,6 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     // member from the base.
     if (ML.HandlingDecoratorAttr) {
       auto E = getCurrentClass(S, &SS);
-      E = ML.MLT.GetExtensionRelatedRecord(E);
       if (E && E->isRecordExtension()) {
         if (auto Base = ML.GetDecoratorMemberBaseExpr(
                 E, R.getLookupNameInfo(), TemplateKWLoc, TemplateArgs)) {

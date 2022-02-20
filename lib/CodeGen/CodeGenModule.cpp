@@ -2880,15 +2880,38 @@ static void ForceEmitBase(CodeGenModule &CGM, GlobalDecl GD) {
   }
 }
 
+static bool HandleDecoratorAlias(const VarDecl *VD) {
+  const Expr *E = VD->getInit();
+
+  if (auto Cast = dyn_cast<ImplicitCastExpr>(E)) {
+    E = Cast->getSubExpr();
+  }
+
+  auto DRE = dyn_cast<DeclRefExpr>(E);
+
+  if (!DRE) {
+    return false;
+  }
+
+  auto FD = dyn_cast<FunctionDecl>(DRE->getDecl());
+
+  if (!FD || !FD->isDecorator()) {
+    return false;
+  }
+
+  if (auto Spec = FD->getTemplateInstantiationPattern()) {
+    FD = Spec;
+  }
+
+  if (FD->hasBody()) {
+    return true;
+  }
+
+  return false;
+}
+
 void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   const auto *Global = cast<ValueDecl>(GD.getDecl());
-
-  // If this is a decorator, emit its base.
-  if (auto FD = dyn_cast<FunctionDecl>(Global)) {
-    if (auto Base = FD->getDecoratorBase()) {
-      ForceEmitBase(*this, CastBaseAsGlobal(Base));
-    }
-  }
 
   // Weak references don't produce any output by themselves.
   if (Global->hasAttr<WeakRefAttr>())
@@ -2995,6 +3018,22 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
       if (Context.getInlineVariableDefinitionKind(VD) ==
           ASTContext::InlineVariableDefinitionKind::Strong)
         GetAddrOfGlobalVar(VD);
+      return;
+    }
+  }
+
+  // Check for decorator aliases.
+  if (auto VD = dyn_cast<VarDecl>(Global)) {
+    if (HandleDecoratorAlias(VD)) {
+      EmitGlobalDefinition(GD);
+      return;
+    }
+  }
+
+  // Extensions are always emitted.
+  if (auto M = dyn_cast<CXXMethodDecl>(Global)) {
+    if (M->getParent()->isRecordExtension()) {
+      EmitGlobalDefinition(GD);
       return;
     }
   }
@@ -3671,9 +3710,14 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
       std::uint64_t ArgCount = FD->isCXXClassMember() ? 1u : 0u;
       auto Base = FD->getDecoratorBase();
       assert(Base && "No base?");
-      auto Sym = getMangledName(CastBaseAsGlobal(Base));
+
+      // Emit base and get its symbol.
+      auto GlobalBase = CastBaseAsGlobal(Base);
+      ForceEmitBase(*this, GlobalBase);
+      auto Sym = getMangledName(GlobalBase);
       assert(!Sym.empty() && "Sym was empty!");
 
+      // Setup flags.
       if (FD->isTailDecorator()) {
         Flags |= ml::flags::TAIL;
       }
@@ -5789,6 +5833,36 @@ void CodeGenModule::EmitDeclContext(const DeclContext *DC) {
   }
 }
 
+static CXXRecordDecl *GetTypeAliasExtension(TypeAliasDecl *TA) {
+  auto TSI = TA->getTypeSourceInfo();
+  assert(TSI && "No type?");
+
+  if (auto TST = TSI->getType()->getAs<TemplateSpecializationType>()) {
+    auto R = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+        TST->getAsCXXRecordDecl());
+    if (R && R->isRecordExtension()) {
+      return R;
+    }
+  }
+
+  return nullptr;
+}
+
+static CXXMethodDecl* GetDtorDecorator(CXXRecordDecl* R) {
+  auto BaseSpec = R->bases_begin();
+  assert(BaseSpec && "No base?");
+  auto Base = BaseSpec->getType()->getAsCXXRecordDecl();
+  assert(Base && "No base?");
+
+  for (auto M : Base->methods()) {
+    if (M->getDecoratorBase()) {
+      return M;
+    }
+  }
+
+  return nullptr;
+}
+
 /// EmitTopLevelDecl - Emit code for a single top level declaration.
 void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   // Ignore dependent declarations.
@@ -5799,6 +5873,17 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   if (auto *FD = dyn_cast<FunctionDecl>(D))
     if (FD->isConsteval())
       return;
+
+  // Make sure to emit extension instantiations.
+  if (auto *TA = dyn_cast<TypeAliasDecl>(D)) {
+    if (auto R = GetTypeAliasExtension(TA)) {
+      EmitTopLevelDecl(R);
+
+      if (auto DtorDeco = GetDtorDecorator(R)) {
+        EmitTopLevelDecl(DtorDeco);
+      }
+    }
+  }
 
   switch (D->getKind()) {
   case Decl::CXXConversion:

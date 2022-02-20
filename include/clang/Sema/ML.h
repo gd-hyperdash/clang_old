@@ -1,4 +1,4 @@
-//===- ML.h - Sema ML extensions ----------------------------------*- C++ -*-===//
+//===- ML.h - Sema ML extensions ---------------------------------*- C++ -*-===//
 //
 // See ML_LICENSE.txt for license information.
 //
@@ -7,98 +7,90 @@
 #ifndef LLVM_CLANG_SEMA_ML_H
 #define LLVM_CLANG_SEMA_ML_H
 
-#include "clang/AST/AST.h"
+#include "clang/Sema/MLTemplate.h"
 
 namespace clang {
+class LookupResult;
 class ParsedAttr;
 
 /// Provides custom Sema utilities.
-class SemaExtension {
+class SemaML {
   friend class Sema;
+  friend class SemaMLTemplate;
 
-  Sema &S;
-  bool DecoContext;
-  bool TildeContext;
-  llvm::SetVector<StringRef> LinkNameCache;
-
-  llvm::DenseMap<FunctionDecl *, Expr *> DeferredDecorators;
-  llvm::DenseMap<ClassTemplateDecl *, TypeSourceInfo *> DeferredExtensions;
-  llvm::SmallVector<DeclarationNameInfo, 8u> DeferredDNI;
-
-  SemaExtension(Sema &SemaRef)
-      : S(SemaRef), DecoContext(false), TildeContext(false) {}
-
-  Expr *GetBaseExpr(CXXRecordDecl *Base, const DeclarationNameInfo &DNI,
-                    bool IsDtor = false);
-
-  Expr *GetBaseExpr(CXXRecordDecl *Base, bool IsDtor) {
-    return GetBaseExpr(Base, DeclarationNameInfo(), IsDtor);
-  }
+  enum DecoratorBaseKind {
+    Unknown,
+    Simple,         // we have one well defined candidate
+    Lookup,         // we have multiple candidates
+    ClassDependant, // the base depends on a templated class
+  };
 
 public:
-  void setDecoratorContext(bool b) { DecoContext = b; }
-  bool isDecoratorContext() const { return DecoContext; }
+  Sema &S;
+  SemaMLTemplate MLT;
 
-  void setParsingTilde(bool b) { TildeContext = b; }
-  bool isParsingTilde() const { return TildeContext; }
+  /// Set to true when a decorator attribute is being parsed.
+  /// This affects the parser, and enables method decoration
+  /// by using the name only.
+  bool HandlingDecoratorAttr;
 
+  /// Set to true when a dtor decorator is being parsed or
+  /// constructed. This affects the parser, enabling the '~'
+  /// syntax.
+  bool HandlingDtor;
+
+protected:
+  /// Cache for "link_name", used to prevent defining the
+  /// same symbol more than once.
+  llvm::SetVector<StringRef> LinkNameCache;
+
+  /// List of name info used in instantiation.
+  llvm::SmallVector<DeclarationNameInfo, 8u> DeferredDNI;
+
+  SemaML(Sema &SemaRef)
+      : S(SemaRef), MLT(SemaRef, *this), HandlingDecoratorAttr(false),
+        HandlingDtor(false) {}
+
+public:
   void cacheLinkName(StringRef S) { LinkNameCache.insert(S); }
-  bool hasLinkName(StringRef S) { return LinkNameCache.contains(S); }
+  bool hasLinkNameCached(StringRef S) { return LinkNameCache.contains(S); }
 
-  /// Functions for handling decorators.
-
-  FunctionDecl *FindBaseOfDecorator(FunctionDecl *FD, Expr *E);
-  TypeSourceInfo *AttachExtensionBase(CXXRecordDecl *E, TypeSourceInfo *B);
-  std::uint64_t DeferDecoratorDNI(const DeclarationNameInfo &DNI);
-  DeclarationNameInfo GetDecoratorDNI(const std::uint64_t Value);
-  std::uint64_t DeferDecoratorDtor();
-  bool IsDeferredDecoratorDtor(const std::uint64_t Value);
-  Expr *GetDecoratorMember(CXXRecordDecl *E, const DeclarationNameInfo &DNI,
-                           SourceLocation TemplateKWLoc,
-                           const TemplateArgumentListInfo *TemplateArgs);
-
-  /// Functions for handling templates.
-
-  bool HandleDecoratorInstantiation(FunctionDecl *D);
-  bool HandleExtensionInstantiation(ClassTemplateSpecializationDecl *Spec);
-
-  /// Generic sema utilities.
-
+  /// Check if this declaration is under the ML namespace.
   bool isMLNamespace(const DeclContext *DC);
   bool isInMLNamespace(const Decl *D);
 
-  NestedNameSpecifierLoc
-  BuildRecordQualifier(RecordDecl *R, SourceRange Range = SourceRange());
+  std::uint64_t DeferDecoratorDtor();
+  bool IsDeferredDecoratorDtor(const std::uint64_t Value);
 
-  UnaryOperator *BuildAddrOf(Expr *E, SourceLocation Loc = SourceLocation());
+  std::uint64_t DeferDecoratorDNI(const DeclarationNameInfo &DNI);
+  DeclarationNameInfo GetDecoratorDNI(const std::uint64_t Value);
 
-  Expr *BuildInteger(std::uint64_t const Value);
+  Expr *LookupDecoratorBaseImpl(CXXRecordDecl *Base, LookupResult &R);
 
-  Expr *BuildDeclRef(ValueDecl *V, QualType T, const DeclarationNameInfo &DNI,
-                     NestedNameSpecifierLoc NNSLoc, bool AddrOf,
-                     SourceLocation Loc = SourceLocation());
+  Expr *LookupDecoratorMemberBase(CXXRecordDecl *Base,
+                                  const DeclarationNameInfo &DNI);
 
-  Expr *BuildDependantRef(NestedNameSpecifierLoc NNSLoc,
-                          SourceLocation TemplateKWLoc,
-                          const DeclarationNameInfo &DNI,
-                          const TemplateArgumentListInfo *TemplateArgs,
-                          bool AddrOf, SourceLocation Loc = SourceLocation());
+  Expr *LookupDecoratorDtorBase(CXXRecordDecl *Base);
 
-  Expr *BuildLookup(CXXRecordDecl *NamingClass, NestedNameSpecifierLoc NNSLoc,
-                    const DeclarationNameInfo &DNI,
-                    const UnresolvedSetImpl &Fns, bool AddrOf,
-                    SourceLocation Loc = SourceLocation());
+  /// When handing extensions, find the correct decorator base.
+  Expr *
+  GetDecoratorMemberBaseExpr(CXXRecordDecl *E, const DeclarationNameInfo &DNI,
+                             SourceLocation TemplateKWLoc,
+                             const TemplateArgumentListInfo *TemplateArgs);
 
-  ClassTemplateSpecializationDecl *
-  BuildClassSpecialization(ClassTemplateDecl *CTD,
-                           llvm::ArrayRef<TemplateArgument> Args);
+  /// What kind of base does this expression hold?
+  DecoratorBaseKind GetDecoratorBaseKind(Expr *BaseExpr);
 
-  QualType GetClassSpecializationType(ClassTemplateSpecializationDecl *Spec);
-  bool ForceCompleteClassSpecialization(ClassTemplateSpecializationDecl *Spec);
+  FunctionDecl *HandleSimpleBase(FunctionDecl *D, Expr *BaseExpr);
+  FunctionDecl *HandleLookupBase(FunctionDecl *D, Expr *BaseExpr,
+                                 CXXRecordDecl *ClassBase);
+  FunctionDecl *HandleDependantBase(FunctionDecl *D, Expr *BaseExpr,
+                                    CXXRecordDecl *ClassBase);
 
-  bool ForceCompleteFunction(FunctionDecl *FD);
+  FunctionDecl *ValidateDecoratorBase(FunctionDecl *D, FunctionDecl *B);
 
-  bool InsertFriend(CXXRecordDecl *Base, CXXRecordDecl *Friend);
+  FunctionDecl *FindBaseOfDecorator(FunctionDecl *FD, Expr *E);
+  TypeSourceInfo *AttachBaseToExtension(CXXRecordDecl *E, TypeSourceInfo *B);
 };
 
 /// Attribute handlers.

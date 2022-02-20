@@ -12913,6 +12913,18 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S, AccessSpecifier AS,
 
   PushOnScopeChains(NewND, S);
   ActOnDocumentableDecl(NewND);
+
+  // Handle extension instantiation.
+  if (!NewND->isTemplated()) {
+    if (auto TST = TInfo->getType()->getAs<TemplateSpecializationType>()) {
+      auto Spec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+          TST->getAsCXXRecordDecl());
+      if (Spec && Spec->isRecordExtension()) {
+        ML.MLT.HandleExtensionInstantiation(Spec);
+      }
+    }
+  }
+
   return NewND;
 }
 
