@@ -11,6 +11,14 @@
 using namespace clang;
 
 //===-----------------------------------------------------------------------===//
+// Globals
+//===-----------------------------------------------------------------------===//
+
+static auto constexpr ML_CTOR_TYPE = "void (mlrt::ext_init_t)";
+static auto constexpr ML_IMPL_NAME = "mlrt::MLExtensionImpl";
+static auto constexpr ML_DTOR_DECO = "deleteExtData";
+
+//===-----------------------------------------------------------------------===//
 // Helpers
 //===-----------------------------------------------------------------------===//
 
@@ -18,7 +26,7 @@ static bool ExtensionHasCtor(CXXRecordDecl *E) {
   for (auto D : E->decls()) {
     if (auto Ctor = dyn_cast<CXXConstructorDecl>(D)) {
       auto const T = Ctor->getType().getAsString();
-      if (T == "void (mlrt::ext_init_t)") {
+      if (T == ML_CTOR_TYPE) {
         return true;
       }
     }
@@ -32,20 +40,33 @@ static ClassTemplateSpecializationDecl *GetExtensionImpl(CXXRecordDecl *E) {
   assert(BaseSpec && "No base?");
   auto Base = BaseSpec->getType()->getAsCXXRecordDecl();
   assert(Base && "No base?");
-  assert(Base->getQualifiedNameAsString() == "mlrt::MLExtensionImpl" &&
-         "Invalid base!");
+  assert(Base->getQualifiedNameAsString() == ML_IMPL_NAME && "Invalid base!");
   return cast<ClassTemplateSpecializationDecl>(Base);
 }
 
 static CXXMethodDecl *GetDtorDecorator(CXXRecordDecl *Impl) {
   for (auto M : Impl->methods()) {
-    if (M->getName() == "deleteExtData") {
+    if (M->getName() == ML_DTOR_DECO) {
       return M;
     }
   }
 
   llvm_unreachable("Could not find the destructor decorator!");
   return nullptr;
+}
+
+static llvm::SmallVector<TemplateArgument, 1u>
+ResolveSpecArgs(ClassTemplateDecl *CTD,
+                const MultiLevelTemplateArgumentList &ExtArgs) {
+  llvm::SmallVector<TemplateArgument, 1u> Resolved;
+  auto ParamList = CTD->getTemplateParameters();
+  assert(ParamList && "No params?");
+
+  for (auto i = 0u; i < ParamList->size(); ++i) {
+    Resolved.push_back(ExtArgs(ParamList->getDepth(), i));
+  }
+
+  return Resolved;
 }
 
 //===-----------------------------------------------------------------------===//
@@ -151,15 +172,38 @@ QualType SemaMLTemplate::GetExtensionBaseType(CXXRecordDecl *E,
   // Handle dependant base.
   if (!BaseType.isNull() && BaseType->isDependentType()) {
     auto Args = S.getTemplateInstantiationArgs(E);
+    auto Ty = BaseType.getTypePtr();
 
-    if (auto TPT = BaseType->getAs<TemplateTypeParmType>()) {
-      auto &Arg = Args(TPT->getDepth(), TPT->getIndex());
-      BaseType = Arg.getAsType();
-    }
+    while (true) {
+      // [[extension(T)]]
+      if (auto TPT = Ty->getAs<TemplateTypeParmType>()) {
+        auto &Arg = Args(TPT->getDepth(), TPT->getIndex());
+        BaseType = Arg.getAsType();
+        break;
+      }
 
-    if (auto TST = BaseType->getAs<TemplateSpecializationType>()) {
-      TST->dump();
-      llvm_unreachable("BP");
+      // [[extension(E<T, K>)]]
+      if (auto TST = Ty->getAs<TemplateSpecializationType>()) {
+        auto TN = TST->getTemplateName();
+        auto CTD = cast<ClassTemplateDecl>(TN.getAsTemplateDecl());
+        auto Resolved = ResolveSpecArgs(CTD, Args);
+        auto Spec = CreateClassTS(CTD, Resolved);
+        BaseType = GetClassTSType(Spec);
+        break;
+      }
+
+      // template <auto X>
+      // [[extension(decltype(X))]]
+      if (auto DT = Ty->getAs<DecltypeType>()) {
+        // TODO
+      }
+
+      // [[extension(auto)]]
+      if (auto AT = Ty->getAs<AutoType>()) {
+        // TODO
+      }
+
+      llvm_unreachable("Unknown type!");
     }
   }
 
