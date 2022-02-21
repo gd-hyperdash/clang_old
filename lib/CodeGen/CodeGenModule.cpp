@@ -3707,7 +3707,6 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
     // Handle decorators.
     if (FD->isDecorator()) {
       std::uint64_t Flags = ml::flags::NONE;
-      std::uint64_t ArgCount = FD->isCXXClassMember() ? 1u : 0u;
       auto Base = FD->getDecoratorBase();
       assert(Base && "No base?");
 
@@ -3732,8 +3731,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
 
       auto Node =
           llvm::MDNode::get(VMContext, {llvm::MDString::get(VMContext, Sym),
-                                        GetMDIntValue(VMContext, Flags),
-                                        GetMDIntValue(VMContext, ArgCount)});
+                                        GetMDIntValue(VMContext, Flags)});
       F->setMetadata(ml::DECORATOR, Node);
     }
   }

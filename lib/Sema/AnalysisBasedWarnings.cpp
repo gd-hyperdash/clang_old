@@ -2196,7 +2196,7 @@ static QualType StripQualifiers(ASTContext &Context, const QualType T) {
   return Ty;
 }
 
-static QualType GetTailParamType(ASTContext &Context, ParmVarDecl *P) {
+static QualType GetTailParamType(ASTContext &Context, const ParmVarDecl *P) {
   auto T = StripQualifiers(Context, P->getType());
 
   if (auto LV = dyn_cast<LValueReferenceType>(T)) {
@@ -2241,11 +2241,11 @@ static void DoDecoratorChecks(Sema &S, const FunctionDecl *FD) {
 
   // Tail checks.
   if (IsDeco && IsTailDeco) {
-    auto BRTy =
-        StripQualifiers(Context, FD->getDecoratorBase()->getReturnType());
+    auto DecoBase = FD->getDecoratorBase();
+    auto BRTy = StripQualifiers(Context, DecoBase->getReturnType());
 
     if (auto RV = dyn_cast<RValueReferenceType>(BRTy)) {
-      llvm_unreachable("Unimplemented!");
+      llvm_unreachable("Unimplemented RValue support!");
     }
 
     if (auto LV = dyn_cast<LValueReferenceType>(BRTy)) {
@@ -2263,28 +2263,46 @@ static void DoDecoratorChecks(Sema &S, const FunctionDecl *FD) {
     }
 
     // Check params size.
+    bool const RetVoid = DecoBase->getReturnType()->isVoidType();
     auto const NumParams = FD->getNumParams();
+    auto const ExpectedNumParams = DecoBase->getNumParams() + !RetVoid;
 
-    if (NumParams > 1) {
-      auto Range = FD->getParametersSourceRange();
-      S.Diag(Range.getBegin(), diag::err_tail_wrong_param_size) << Range;
+    if (NumParams != ExpectedNumParams) {
+      if (NumParams) {
+        auto Range = FD->getParametersSourceRange();
+        S.Diag(Range.getBegin(), diag::err_tail_wrong_param_size)
+            << Range << ExpectedNumParams << NumParams;
+      } else {
+        S.Diag(FD->getLocation(), diag::err_tail_wrong_param_size)
+            << ExpectedNumParams << NumParams;
+      }
       return;
     }
 
-    if (!FD->getDecoratorBase()->getReturnType()->isVoidType()) {
-      if (!NumParams) {
-        S.Diag(FD->getLocation(), diag::err_tail_wrong_param_size);
+    // Check param types.
+    for (auto i = 0u; i < DecoBase->getNumParams(); ++i) {
+      auto BP = DecoBase->getParamDecl(i);
+      auto DP = FD->getParamDecl(i);
+      auto BTy = StripQualifiers(Context, BP->getType());
+      auto DTy = StripQualifiers(Context, DP->getType());
+
+      if (BTy != DTy) {
+        auto Range = DP->getSourceRange();
+        S.Diag(Range.getBegin(), diag::err_tail_wrong_param_type)
+            << Range << DTy.getAsString() << BTy.getAsString();
         return;
       }
+    }
 
-      // Check param type.
-      auto P = *FD->param_begin();
-      auto PTy = GetTailParamType(Context, P);
+    // Check return param type.
+    if (!RetVoid) {
+      auto RetP = FD->getParamDecl(NumParams - 1);
+      auto RetPTy = GetTailParamType(Context, RetP);
 
-      if (PTy != BRTy) {
-        auto Range = P->getSourceRange();
+      if (RetPTy != BRTy) {
+        auto Range = RetP->getSourceRange();
         S.Diag(Range.getBegin(), diag::err_tail_wrong_param_type)
-            << Range << FD->getName() << BRTy.getAsString();
+            << Range << RetPTy.getAsString() << BRTy.getAsString();
       }
     }
   }

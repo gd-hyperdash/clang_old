@@ -11399,9 +11399,9 @@ def err_tail_is_decorator : Error<
 def err_tail_wrong_ret_type : Error<
   "the return type of '%0' must be 'void'">;
 def err_tail_wrong_param_size : Error<
-  "tails must have only 1 argument">;
+  "invalid number of parameters (expected %0, found %1)">;
 def err_tail_wrong_param_type : Error<
-  "the argument type of '%0' must be '%1'">;
+  "invalid type '%0', expected '%1'">;
 def err_extension_initialization : Error<
   "extensions cannot be constructed directly">;
 def err_extension_failed : Error<
