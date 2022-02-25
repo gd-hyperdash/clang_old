@@ -14,8 +14,11 @@ using namespace clang;
 // Globals
 //===-----------------------------------------------------------------------===//
 
-static auto constexpr ML_CTOR_TYPE = "void (mlrt::ext_init_t)";
+#ifndef NDEBUG
 static auto constexpr ML_IMPL_NAME = "mlrt::MLExtensionImpl";
+#endif
+
+static auto constexpr ML_CTOR_TYPE = "void (mlrt::ext_init_t)";
 static auto constexpr ML_DTOR_DECO = "deleteExtData";
 
 //===-----------------------------------------------------------------------===//
